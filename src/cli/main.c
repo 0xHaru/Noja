@@ -36,6 +36,9 @@
 #include "../lib/run.h"
 #include "../lib/runtime.h"
 #include "../lib/diagram.h"
+#include "../lib/executable.h"
+#include "../lib/utils/source.h"
+#include "../lib/compiler/compile.h"
 
 static void usage(FILE *stream, const char *name) 
 {
@@ -54,6 +57,7 @@ static void help(FILE *stream, const char *name)
 		"  -h, --help          Show this message\n"
 		"  -i, --inline        Execute a string of code instead of a file\n"
 		"  -a, --assembly      Specify that the source is bytecode and not noja code\n"
+		"  -b, --bytecode      Output bytecode instead of executing the script\n"
 		"  -p, --profile       Profile the execution of the source (can't be used with -d)\n"
 		"  -o, --output <file> Specify the output file of -p or --diagram-ast\n"
 		"  -H, --heap <size>   Specify the heap size of the runtime\n"
@@ -64,6 +68,7 @@ static void help(FILE *stream, const char *name)
 typedef enum {
 	Mode_DIAGRAM,
 	Mode_ASSEMBLY,
+    Mode_BYTECODE,
 	Mode_DEFAULT,
 	Mode_HELP,
 } Mode;
@@ -99,6 +104,10 @@ int main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--assembly")) {
 
 			mode = Mode_ASSEMBLY;
+
+		} else if (!strcmp(argv[i], "-b") || !strcmp(argv[i], "--bytecode")) {
+
+			mode = Mode_BYTECODE;
 
 		} else if (!strcmp(argv[i], "--diagram-ast")) {
 
@@ -255,6 +264,45 @@ int main(int argc, char **argv)
 			else
 				Runtime_SerializeProfilingResultsToFile(runtime, output);
 			Runtime_Free(runtime);
+			break;
+		}
+
+		case Mode_BYTECODE:
+		{
+			if (input == NULL) {
+				fprintf(stderr, "Error: No input file\n");
+				usage(stderr, argv[0]);
+				code = -1;
+				break;
+			}
+
+            Source *source = NULL;
+            Error error;
+		    Error_Init(&error);
+
+            if (no_file)
+                source = Source_FromString(NULL, input, -1, &error);
+            else
+                source = Source_FromFile(input, &error);
+
+            if (source == NULL) {
+                Error_Print(&error, ErrorType_UNSPECIFIED, stderr);
+                Error_Free(&error);
+                code = -1;
+                break;
+            }
+
+            int error_offset;
+            Executable *exe = compile(source, &error, &error_offset);
+            if (exe == NULL) {
+                Error_Print(&error, ErrorType_SYNTAX, stderr);
+		    	Error_Free(&error);
+                code = -1;
+                break;
+            }
+
+            Executable_Dump(exe, stdout);
+			code = 0;
 			break;
 		}
 	}
